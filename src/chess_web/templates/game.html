@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Chess Game{% endblock %}
+
+{% block content %}
+<div class="game-container">
+    <div class="side-panel">
+        <div class="status-section">
+            <h2>Game Status</h2>
+            <div id="status-message" class="status-message {{ 'check' if game.board.is_in_check(game.current_turn) else '' }}">
+                {{ game.status_message }}
+            </div>
+            <div id="turn-indicator" class="turn-indicator">
+                Current Turn: <span class="turn-color {{ game.current_turn }}">{{ game.current_turn.capitalize() }}</span>
+            </div>
+        </div>
+
+        <div class="move-history-section">
+            <h3>Move History</h3>
+            <div id="move-history" class="move-history">
+                <p class="no-moves">No moves yet</p>
+            </div>
+        </div>
+
+        <div class="captured-pieces-section">
+            <h3>Captured Pieces</h3>
+            <div class="captured-white">
+                <strong>White captured:</strong>
+                <div class="captured-list">
+                    {% for piece in game.captured_pieces.white %}
+                        <span class="captured-piece">{{ piece.symbol if piece.symbol else '?' }}</span>
+                    {% endfor %}
+                    {% if not game.captured_pieces.white %}
+                        <span class="none">None</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="captured-black">
+                <strong>Black captured:</strong>
+                <div class="captured-list">
+                    {% for piece in game.captured_pieces.black %}
+                        <span class="captured-piece">{{ piece.symbol if piece.symbol else '?' }}</span>
+                    {% endfor %}
+                    {% if not game.captured_pieces.black %}
+                        <span class="none">None</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="game-controls">
+            <button id="resign-btn" class="btn btn-danger">Resign</button>
+        </div>
+    </div>
+
+    <div class="board-container">
+        <div class="chessboard" id="chessboard"
+             data-current-turn="{{ game.current_turn }}"
+             data-game-over="{{ game.game_over|tojson }}"
+             data-debug="{{ 'true' if debug_ui else 'false' }}">
+            {% for row in range(8) %}
+                {% for col in range(8) %}
+                    {% set piece = game.board.get_piece(row, col) %}
+                    {% set is_light = (row + col) % 2 == 0 %}
+                    <div class="square {{ 'light' if is_light else 'dark' }}"
+                         data-row="{{ row }}"
+                         data-col="{{ col }}">
+                        {% if piece %}
+                            <div class="piece {{ piece.color }}"
+                                 data-piece-type="{{ piece.__class__.__name__.lower() }}"
+                                 data-piece-color="{{ piece.color }}">
+                                {{ piece.get_symbol() }}
+                            </div>
+                        {% endif %}
+                        {% if col == 0 %}
+                            <span class="rank-label">{{ 8 - row }}</span>
+                        {% endif %}
+                        {% if row == 7 %}
+                            <span class="file-label">{{ 'abcdefgh'[col] }}</span>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div id="promotion-modal" class="modal" style="display: none;">
+    <div class="modal-content promotion-modal-content">
+        <h2>Choose Promotion Piece</h2>
+        <p>Select which piece you want to promote your pawn to:</p>
+        <div class="promotion-choices">
+            <button class="promotion-btn" data-piece="queen">
+                <span class="promotion-piece">♕</span>
+                <span>Queen</span>
+            </button>
+            <button class="promotion-btn" data-piece="rook">
+                <span class="promotion-piece">♖</span>
+                <span>Rook</span>
+            </button>
+            <button class="promotion-btn" data-piece="bishop">
+                <span class="promotion-piece">♗</span>
+                <span>Bishop</span>
+            </button>
+            <button class="promotion-btn" data-piece="knight">
+                <span class="promotion-piece">♘</span>
+                <span>Knight</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="game-over-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h2 id="game-over-title">Game Over</h2>
+        <p id="game-over-message"></p>
+        <button id="new-game-modal-btn" class="btn">Start New Game</button>
+    </div>
+</div>
+{% endblock %}

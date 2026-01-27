@@ -1,0 +1,456 @@
+/* Global Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    background: rgba(255, 255, 255, 0.95);
+    padding: 1rem 2rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h1 {
+    color: #333;
+    font-size: 1.8rem;
+}
+
+main {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+}
+
+footer {
+    background: rgba(255, 255, 255, 0.95);
+    padding: 1rem;
+    text-align: center;
+    color: #666;
+}
+
+/* Game Container */
+.game-container {
+    display: flex;
+    gap: 2rem;
+    max-width: 1200px;
+    width: 100%;
+}
+
+/* Side Panel */
+.side-panel {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.status-section h2 {
+    font-size: 1.3rem;
+    margin-bottom: 0.8rem;
+    color: #333;
+}
+
+.status-message {
+    padding: 0.8rem;
+    background: #f0f0f0;
+    border-radius: 5px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.status-message.check {
+    background: #ffebee;
+    color: #c62828;
+    font-weight: bold;
+}
+
+.turn-indicator {
+    margin-top: 0.8rem;
+    padding: 0.8rem;
+    background: #e3f2fd;
+    border-radius: 5px;
+    text-align: center;
+}
+
+.turn-color {
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.turn-color.white {
+    color: #424242;
+}
+
+.turn-color.black {
+    color: #000;
+}
+
+/* Move History */
+.move-history-section h3 {
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    color: #333;
+}
+
+.move-history {
+    max-height: 200px;
+    overflow-y: auto;
+    background: #f9f9f9;
+    border-radius: 5px;
+    padding: 0.8rem;
+}
+
+.move-history ol {
+    list-style-position: inside;
+}
+
+.move-history li {
+    padding: 0.3rem 0;
+    font-family: 'Courier New', monospace;
+}
+
+.no-moves {
+    color: #999;
+    font-style: italic;
+}
+
+/* Captured Pieces */
+.captured-pieces-section h3 {
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    color: #333;
+}
+
+.captured-white,
+.captured-black {
+    margin-bottom: 0.8rem;
+}
+
+.captured-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.3rem;
+}
+
+.captured-piece {
+    font-size: 1.5rem;
+}
+
+.captured-list .none {
+    color: #999;
+    font-style: italic;
+}
+
+/* Buttons */
+.btn {
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 5px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: #667eea;
+    color: white;
+}
+
+.btn:hover {
+    background: #5568d3;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.btn-danger {
+    background: #dc3545;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+/* Board Container */
+.board-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Chessboard */
+.chessboard {
+    display: grid;
+    grid-template-columns: repeat(8, 70px);
+    grid-template-rows: repeat(8, 70px);
+    border: 4px solid #333;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    background: white;
+}
+
+/* Squares */
+.square {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.square.light {
+    background-color: #f0d9b5;
+}
+
+.square.dark {
+    background-color: #b58863;
+}
+
+.square:hover {
+    filter: brightness(0.9);
+}
+
+.square.selected {
+    background-color: #7fa650 !important;
+    box-shadow: inset 0 0 0 3px #5a7a3c;
+}
+
+.square.drag-over {
+    box-shadow: inset 0 0 0 3px #1e88e5;
+    filter: brightness(1.05);
+}
+
+.square.legal-move::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 50%;
+}
+
+.square.legal-move.has-piece::after {
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 0, 0, 0.3);
+    border-radius: 0;
+    border: 3px solid rgba(255, 0, 0, 0.6);
+}
+
+/* Board Labels */
+.rank-label,
+.file-label {
+    position: absolute;
+    font-size: 0.7rem;
+    font-weight: bold;
+    color: rgba(0, 0, 0, 0.6);
+}
+
+.rank-label {
+    top: 2px;
+    left: 2px;
+}
+
+.file-label {
+    bottom: 2px;
+    right: 2px;
+}
+
+.square.dark .rank-label,
+.square.dark .file-label {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* Pieces */
+.piece {
+    font-size: 3.5rem;
+    cursor: grab;
+    user-select: none;
+    transition: transform 0.1s ease;
+    z-index: 10;
+}
+
+.piece:hover {
+    transform: scale(1.1);
+}
+
+.piece:active {
+    cursor: grabbing;
+}
+
+.piece.dragging {
+    opacity: 0.7;
+    transform: scale(1.1);
+}
+
+.drag-ghost {
+    position: fixed;
+    pointer-events: none;
+    font-size: 3.5rem;
+    transform: translate(-50%, -50%);
+    z-index: 2000;
+    opacity: 0.9;
+}
+
+/* Piece Animations */
+.piece.moving {
+    transition: all 0.3s ease-out;
+    z-index: 100;
+}
+
+.piece.captured {
+    animation: captureAnimation 0.4s ease-out forwards;
+}
+
+@keyframes captureAnimation {
+    0% {
+        transform: scale(1) rotate(0deg);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.3) rotate(10deg);
+        opacity: 0.7;
+    }
+    100% {
+        transform: scale(0) rotate(45deg);
+        opacity: 0;
+    }
+}
+
+.square.highlight-move {
+    animation: highlightPulse 0.5s ease-in-out;
+}
+
+@keyframes highlightPulse {
+    0%, 100% {
+        background-color: inherit;
+    }
+    50% {
+        filter: brightness(1.3);
+    }
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 10px;
+    text-align: center;
+    min-width: 300px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h2 {
+    margin-bottom: 1rem;
+    color: #333;
+}
+
+.modal-content p {
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+    color: #666;
+}
+
+/* Promotion Modal */
+.promotion-modal-content {
+    min-width: 400px;
+}
+
+.promotion-choices {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.promotion-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: #f5f5f5;
+    border: 2px solid #ddd;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.promotion-btn:hover {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.promotion-piece {
+    font-size: 3rem;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .game-container {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .side-panel {
+        width: 100%;
+        max-width: 560px;
+    }
+
+    .chessboard {
+        grid-template-columns: repeat(8, 60px);
+        grid-template-rows: repeat(8, 60px);
+    }
+
+    .piece {
+        font-size: 3rem;
+    }
+}
+
+@media (max-width: 600px) {
+    .chessboard {
+        grid-template-columns: repeat(8, 45px);
+        grid-template-rows: repeat(8, 45px);
+    }
+
+    .piece {
+        font-size: 2.2rem;
+    }
+
+    header h1 {
+        font-size: 1.3rem;
+    }
+}

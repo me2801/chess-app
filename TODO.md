@@ -1,0 +1,158 @@
+# Web-Based Chess Program TODO (Python + Flask + Jinja)
+
+## In Progress
+- [ ] Nothing currently in progress
+
+## Completed ✓
+- [x] Fix turn management - game should only allow current player to move
+  - [x] Initialize JavaScript with correct game state from server
+  - [x] Add visual feedback when trying to move wrong color piece
+- [x] Set up Flask application structure
+  - [x] Create Flask app instance
+  - [x] Configure templates and static folders
+  - [x] Set up basic routing
+- [x] Create project file structure
+  - [x] app.py (Flask application)
+  - [x] models/board.py (board logic)
+  - [x] models/pieces.py (piece classes)
+  - [x] models/game.py (game state manager)
+  - [x] templates/ (Jinja templates)
+  - [x] static/css/ (stylesheets)
+  - [x] static/js/ (JavaScript for interactivity)
+- [x] Add dependencies to pyproject.toml
+  - [x] Flask
+  - [x] Flask-Session (for game state persistence)
+- [x] Implement board representation
+  - [x] Create 8x8 board data structure
+  - [x] Initialize starting position with all pieces
+  - [x] Add method to get/set pieces at coordinates
+  - [x] Serialize board state to JSON
+- [x] Implement piece classes
+  - [x] Create base Piece class with color and position
+  - [x] Implement Pawn (basic movement)
+  - [x] Implement Rook
+  - [x] Implement Knight
+  - [x] Implement Bishop
+  - [x] Implement Queen
+  - [x] Implement King
+  - [x] Add method to convert pieces to dict/JSON
+- [x] Implement move validation
+  - [x] Check if move is legal for piece type
+  - [x] Verify path is clear (for sliding pieces)
+  - [x] Prevent moving into check
+  - [x] Validate piece ownership (player can only move their pieces)
+- [x] Implement game session handling
+  - [x] Use Flask-Session to store game state
+  - [x] Create new game endpoint
+  - [x] Store board state in session
+- [x] Implement turn management
+  - [x] Track whose turn it is (white/black)
+  - [x] Switch turns after valid move
+- [x] Implement check detection
+  - [x] Detect when king is in check
+  - [x] Return check status in API responses
+- [x] Implement checkmate detection
+  - [x] Verify no legal moves available
+  - [x] End game when checkmate occurs
+- [x] Implement stalemate detection
+- [x] Create main routes
+  - [x] GET / - Main game page
+  - [x] POST /new-game - Start new game
+  - [x] POST /move - Process move request
+  - [x] GET /game-state - Get current board state as JSON
+  - [x] POST /resign - Player resignation
+- [x] Implement move endpoint
+  - [x] Parse move from request (from/to coordinates)
+  - [x] Validate move using game logic
+  - [x] Update board state
+  - [x] Return updated game state as JSON
+- [x] Create base template (base.html)
+  - [x] HTML structure with meta tags
+  - [x] Link CSS and JavaScript files
+  - [x] Create navigation/header
+- [x] Create game page template (game.html)
+  - [x] Render 8x8 chessboard using Jinja loops
+  - [x] Display pieces at correct positions
+  - [x] Add data attributes for coordinates
+  - [x] Show current player turn
+  - [x] Display game status (check, checkmate, etc.)
+- [x] Create move history sidebar
+  - [x] List all previous moves
+  - [x] Show captured pieces
+- [x] Style the chessboard
+  - [x] Create alternating light/dark squares
+  - [x] Add board coordinates (a-h, 1-8)
+  - [x] Make board responsive
+- [x] Style chess pieces
+  - [x] Use Unicode chess symbols
+  - [x] Add piece colors (white/black)
+  - [x] Add hover effects
+- [x] Style UI elements
+  - [x] Game status display
+  - [x] Turn indicator
+  - [x] Move history panel
+  - [x] Buttons (new game, resign, etc.)
+- [x] Implement piece selection
+  - [x] Click to select piece
+  - [x] Highlight selected piece
+  - [x] Show valid move indicators
+- [x] Implement move submission
+  - [x] Send move to server via AJAX/fetch
+  - [x] Update board with server response
+  - [x] Handle invalid moves with error messages
+- [x] Update game status dynamically
+  - [x] Update turn indicator
+  - [x] Show check warnings
+  - [x] Display game over messages
+- [x] Add move history tracking
+  - [x] Store all moves in session
+  - [x] Display in standard chess notation
+- [x] Configure uv run commands
+- [x] Implement special moves
+  - [x] Castling (kingside and queenside)
+  - [x] En passant capture
+  - [x] Pawn promotion
+- [x] Add promotion modal/dialog template
+  - [x] Allow player to choose piece for pawn promotion (Queen, Rook, Bishop, Knight)
+- [x] Implement draw conditions
+  - [x] Threefold repetition
+  - [x] Fifty-move rule
+  - [x] Insufficient material
+- [x] Add animations
+  - [x] CSS animations for piece capture
+  - [x] Highlight animations for moves
+
+## Pending Features
+- [x] Implement drag and drop (optional enhancement)
+  - [x] Drag piece to destination square
+  - [x] Visual feedback during drag
+  - [x] Add simple AI opponent
+
+  
+## Testing & Polish
+- [ ] Write unit tests
+  - [ ] Test piece movement rules
+  - [ ] Test check/checkmate detection
+  - [ ] Test special moves
+  - [ ] Test Flask routes
+- [ ] Implement undo move functionality
+- [ ] Add game save/load functionality
+  - [ ] Export game state
+  - [ ] Load saved game
+
+## Backlog / Future Enhancements
+
+- [ ] Implement multiplayer with WebSockets
+- [ ] Add timer/clock functionality
+- [ ] Support for PGN export/import
+- [ ] Add user accounts and game history
+- [ ] Implement spectator mode
+- [ ] Add sound effects
+- [ ] Theme customization (different board styles)
+
+## Notes
+- Use Flask-Session to maintain game state between requests
+- Consider storing game state in Redis for better scalability
+- Use AJAX for moves to avoid page reloads
+- Chess piece Unicode symbols: ♔♕♖♗♘♙ (white) ♚♛♜♝♞♟ (black)
+- Start with simple click-to-move, add drag-and-drop later

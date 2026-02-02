@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="base-url" content="{{ url_for('index') }}">
     <title>{% block title %}Chess Game{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v=config['ASSET_VERSION']) }}">
     {% block extra_css %}{% endblock %}

@@ -37,6 +37,8 @@ def create_app():
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
     app.config['SESSION_TYPE'] = 'filesystem'
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+    # Support nested deployment under a subdirectory
+    app.config['APPLICATION_ROOT'] = os.environ.get('APPLICATION_ROOT', '/')
     app.config['DEBUG_UI'] = os.environ.get('DEBUG', '').lower() in {'1', 'true', 'yes', 'on'}
     app.config['SESSION_FILE_DIR'] = os.path.abspath(
         os.path.join(os.path.dirname(__file__), '..', '..', '..', 'flask_session')

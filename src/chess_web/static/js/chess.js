@@ -2,6 +2,10 @@
 
 class ChessGame {
     constructor() {
+        // Get base URL for API calls (supports nested deployments)
+        const baseMeta = document.querySelector('meta[name="base-url"]');
+        this.baseUrl = baseMeta ? baseMeta.content.replace(/\/$/, '') : '';
+
         this.selectedSquare = null;
         this.selectedPiece = null;
         this.legalMoves = [];
@@ -282,7 +286,7 @@ class ChessGame {
         try {
             const version = ++this.stateVersion;
             this.debug('syncGameState:start', { version });
-            const response = await fetch('/game-state', { cache: 'no-store' });
+            const response = await fetch(`${this.baseUrl}/game-state`, { cache: 'no-store' });
             const gameState = await response.json();
             this.debug('syncGameState:response', {
                 version,
@@ -473,7 +477,7 @@ class ChessGame {
     async fetchLegalMoves(row, col, highlight) {
         try {
             this.debug('legalMoves:request', { row, col });
-            const response = await fetch('/legal-moves', {
+            const response = await fetch(`${this.baseUrl}/legal-moves`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -519,7 +523,7 @@ class ChessGame {
         try {
             this.isBusy = true;
             this.debug('move:request', { from: fromPos, to: toPos, promotion: promotionPiece });
-            const response = await fetch('/move', {
+            const response = await fetch(`${this.baseUrl}/move`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -604,7 +608,7 @@ class ChessGame {
         this.debug('aiMove:request', {});
 
         try {
-            const response = await fetch('/ai-move', {
+            const response = await fetch(`${this.baseUrl}/ai-move`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -812,7 +816,7 @@ class ChessGame {
             this.stateVersion += 1;
             this.gameId = null;
             this.debug('newGame:request', {});
-            const response = await fetch('/new-game', {
+            const response = await fetch(`${this.baseUrl}/new-game`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -856,7 +860,7 @@ class ChessGame {
         }
 
         try {
-            const response = await fetch('/resign', {
+            const response = await fetch(`${this.baseUrl}/resign`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1196,7 +1200,7 @@ class ChessGame {
 
     async saveGame() {
         try {
-            const response = await fetch('/game-state', { cache: 'no-store' });
+            const response = await fetch(`${this.baseUrl}/game-state`, { cache: 'no-store' });
             const gameState = await response.json();
 
             const saveData = {
@@ -1244,7 +1248,7 @@ class ChessGame {
                 throw new Error('Invalid save file format');
             }
 
-            const response = await fetch('/load-game', {
+            const response = await fetch(`${this.baseUrl}/load-game`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ game_state: saveData.gameState })
@@ -1299,7 +1303,7 @@ class ChessGame {
         if (this.gameOver || this.isBusy) return;
 
         try {
-            const response = await fetch('/undo', {
+            const response = await fetch(`${this.baseUrl}/undo`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });

@@ -182,7 +182,8 @@ class Game:
             'message': self.status_message,
             'in_check': in_check,
             'game_over': self.game_over,
-            'winner': self.winner
+            'winner': self.winner,
+            'captured': captured is not None
         }
 
     def get_legal_moves(self, position: Tuple[int, int]) -> List[Tuple[int, int]]:
@@ -220,6 +221,107 @@ class Game:
             'message': self.status_message,
             'game_over': True,
             'winner': self.winner
+        }
+
+    def undo_move(self) -> dict:
+        """
+        Undo the last move (or last two moves if AI is enabled).
+
+        Returns:
+            Dictionary with success status and message
+        """
+        if not self.move_history:
+            return {
+                'success': False,
+                'message': 'No moves to undo'
+            }
+
+        # If AI is enabled and it's AI's turn, undo two moves
+        moves_to_undo = 1
+        if self.ai_enabled and len(self.move_history) >= 2:
+            # Check if last move was AI's move
+            last_move = self.move_history[-1]
+            if last_move['piece']['color'] == self.ai_color:
+                moves_to_undo = 2
+
+        # Store current state for restoration
+        for _ in range(moves_to_undo):
+            if not self.move_history:
+                break
+
+            last_move = self.move_history.pop()
+
+            # Restore the piece to original position
+            from_pos = tuple(last_move['from'])
+            to_pos = tuple(last_move['to'])
+
+            # Get piece class from type
+            piece_data = last_move['piece']
+            piece_classes = {
+                'pawn': Pawn,
+                'rook': Rook,
+                'knight': Knight,
+                'bishop': Bishop,
+                'queen': Queen,
+                'king': King
+            }
+
+            piece_class = piece_classes.get(piece_data['type'])
+            if piece_class:
+                piece = piece_class(piece_data['color'], from_pos)
+                piece.has_moved = piece_data.get('has_moved', False)
+
+                # For undo, we need to restore has_moved to previous state
+                # If this was the piece's first move, reset has_moved
+                was_first_move = True
+                for move in self.move_history:
+                    if (move['from'] == list(from_pos) or move['to'] == list(from_pos)) and \
+                       move['piece']['color'] == piece_data['color'] and \
+                       move['piece']['type'] == piece_data['type']:
+                        was_first_move = False
+                        break
+                if was_first_move:
+                    piece.has_moved = False
+
+                self.board.set_piece(from_pos[0], from_pos[1], piece)
+                self.board.set_piece(to_pos[0], to_pos[1], None)
+
+            # Restore captured piece if any
+            if last_move.get('captured'):
+                captured_data = last_move['captured']
+                captured_class = piece_classes.get(captured_data['type'])
+                if captured_class:
+                    captured_piece = captured_class(captured_data['color'], to_pos)
+                    captured_piece.has_moved = captured_data.get('has_moved', False)
+                    self.board.set_piece(to_pos[0], to_pos[1], captured_piece)
+
+                    # Remove from captured pieces list
+                    color = 'white' if captured_data['color'] == 'black' else 'black'
+                    if self.captured_pieces[color]:
+                        self.captured_pieces[color].pop()
+
+            # Switch turn back
+            self.current_turn = 'black' if self.current_turn == 'white' else 'white'
+
+            # Remove from position history
+            if self.position_history:
+                self.position_history.pop()
+
+        # Reset game over state
+        self.game_over = False
+        self.winner = None
+
+        # Update status
+        in_check = self.board.is_in_check(self.current_turn)
+        if in_check:
+            self.status_message = f"{self.current_turn.capitalize()} is in check!"
+        else:
+            self.status_message = f"{self.current_turn.capitalize()}'s turn"
+
+        return {
+            'success': True,
+            'message': 'Move undone',
+            'in_check': in_check
         }
 
     def make_ai_move(self) -> Optional[dict]:

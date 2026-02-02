@@ -5,6 +5,39 @@
 {% block content %}
 <div class="game-container">
     <div class="side-panel">
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item wins">
+                <span class="stat-icon">🏆</span>
+                <span class="stat-value" id="wins-count">0</span>
+                <span class="stat-label">Wins</span>
+            </div>
+            <div class="stat-item losses">
+                <span class="stat-icon">💔</span>
+                <span class="stat-value" id="losses-count">0</span>
+                <span class="stat-label">Losses</span>
+            </div>
+            <div class="stat-item streak">
+                <span class="stat-icon">🔥</span>
+                <span class="stat-value" id="streak-count">0</span>
+                <span class="stat-label">Streak</span>
+            </div>
+        </div>
+
+        <!-- Game Timer -->
+        <div class="timer-section">
+            <div class="timer-display">
+                <div class="timer white-timer" id="white-timer">
+                    <span class="timer-label">White</span>
+                    <span class="timer-value">10:00</span>
+                </div>
+                <div class="timer black-timer" id="black-timer">
+                    <span class="timer-label">Black</span>
+                    <span class="timer-value">10:00</span>
+                </div>
+            </div>
+        </div>
+
         <div class="status-section">
             <h2>Game Status</h2>
             <div id="status-message" class="status-message {{ 'check' if game.board.is_in_check(game.current_turn) else '' }}">
@@ -49,7 +82,44 @@
         </div>
 
         <div class="game-controls">
-            <button id="resign-btn" class="btn btn-danger">Resign</button>
+            <div class="control-row">
+                <button id="save-game-btn" class="btn btn-secondary" title="Save Game">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                        <polyline points="17 21 17 13 7 13 7 21"/>
+                        <polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    Save
+                </button>
+                <button id="load-game-btn" class="btn btn-secondary" title="Load Game">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    Load
+                </button>
+                <input type="file" id="load-game-input" accept=".json" style="display: none;">
+            </div>
+            <div class="control-row">
+                <button id="undo-btn" class="btn btn-secondary" title="Undo Last Move">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="1 4 1 10 7 10"/>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                    </svg>
+                    Undo
+                </button>
+                <button id="flip-board-btn" class="btn btn-secondary" title="Flip Board">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="17 1 21 5 17 9"/>
+                        <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                        <polyline points="7 23 3 19 7 15"/>
+                        <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                    </svg>
+                    Flip
+                </button>
+            </div>
+            <button id="resign-btn" class="btn btn-danger">Resign Game</button>
         </div>
     </div>
 
@@ -66,11 +136,9 @@
                          data-row="{{ row }}"
                          data-col="{{ col }}">
                         {% if piece %}
-                            <div class="piece {{ piece.color }}"
+                            <div class="piece {{ piece.color }} {{ piece.__class__.__name__.lower() }}"
                                  data-piece-type="{{ piece.__class__.__name__.lower() }}"
-                                 data-piece-color="{{ piece.color }}">
-                                {{ piece.get_symbol() }}
-                            </div>
+                                 data-piece-color="{{ piece.color }}"></div>
                         {% endif %}
                         {% if col == 0 %}
                             <span class="rank-label">{{ 8 - row }}</span>
@@ -91,19 +159,19 @@
         <p>Select which piece you want to promote your pawn to:</p>
         <div class="promotion-choices">
             <button class="promotion-btn" data-piece="queen">
-                <span class="promotion-piece">♕</span>
+                <div class="promotion-piece piece white queen"></div>
                 <span>Queen</span>
             </button>
             <button class="promotion-btn" data-piece="rook">
-                <span class="promotion-piece">♖</span>
+                <div class="promotion-piece piece white rook"></div>
                 <span>Rook</span>
             </button>
             <button class="promotion-btn" data-piece="bishop">
-                <span class="promotion-piece">♗</span>
+                <div class="promotion-piece piece white bishop"></div>
                 <span>Bishop</span>
             </button>
             <button class="promotion-btn" data-piece="knight">
-                <span class="promotion-piece">♘</span>
+                <div class="promotion-piece piece white knight"></div>
                 <span>Knight</span>
             </button>
         </div>

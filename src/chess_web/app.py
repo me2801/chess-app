@@ -55,6 +55,10 @@ def create_app():
                 pass
     Session(app)
 
+    # Register the API blueprint with Swagger documentation
+    from .api import api_bp
+    app.register_blueprint(api_bp)
+
     @app.after_request
     def disable_cache(response):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -210,6 +214,58 @@ def create_app():
 
         return jsonify(game.to_dict())
 
+    @app.route('/load-game', methods=['POST'])
+    def load_game():
+        """Load a saved game state."""
+        data = request.get_json(silent=True)
+        if not data or 'game_state' not in data:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid load game payload'
+            }), 400
+
+        try:
+            game = Game.from_dict(data['game_state'])
+            session['game'] = game.to_dict()
+            session['server_start_id'] = app.config['SERVER_START_ID']
+            session.modified = True
+
+            return jsonify({
+                'success': True,
+                'message': 'Game loaded successfully',
+                'game_state': game.to_dict()
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Failed to load game: {str(e)}'
+            }), 400
+
+    @app.route('/undo', methods=['POST'])
+    def undo_move():
+        """Undo the last move."""
+        if 'game' not in session:
+            return jsonify({
+                'success': False,
+                'message': 'No active game'
+            }), 400
+        if session.get('server_start_id') != app.config['SERVER_START_ID']:
+            return jsonify({
+                'success': False,
+                'message': 'Session expired'
+            }), 400
+
+        game = Game.from_dict(session['game'])
+        result = game.undo_move()
+
+        session['game'] = game.to_dict()
+        session.modified = True
+
+        if result['success']:
+            result['game_state'] = game.to_dict()
+
+        return jsonify(result)
+
     @app.route('/resign', methods=['POST'])
     def resign():
         """Handle player resignation."""
@@ -253,6 +309,7 @@ def main():
     print("Chess Web Application Starting...")
     print("="*60)
     print("\nOpen your browser to: http://127.0.0.1:5000")
+    print("API Documentation:    http://127.0.0.1:5000/api/docs")
     print("\nPress CTRL+C to stop the server\n")
 
     app = create_app()

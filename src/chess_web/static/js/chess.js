@@ -6,6 +6,7 @@ class ChessGame {
         this.selectedPiece = null;
         this.legalMoves = [];
         this.draggingFrom = null;
+        this.draggingPiece = null;
         this.isBusy = false;
         this.dragActive = false;
         this.dragGhost = null;
@@ -16,6 +17,13 @@ class ChessGame {
         this.stateVersion = 0;
         this.gameId = null;
         this.dragSymbol = null;
+        this.pendingLegalMoves = null;
+        this.blurHandler = null;
+        this.boardFlipped = false;
+        this.soundEnabled = true;
+        this.timerInterval = null;
+        this.whiteTime = 600; // 10 minutes in seconds
+        this.blackTime = 600;
 
         // Initialize from DOM data attributes
         const board = document.getElementById('chessboard');
@@ -25,10 +33,249 @@ class ChessGame {
         this.debugLog = [];
         this.debugOverlay = null;
 
+        // Load stats and preferences
+        this.loadStats();
+        this.loadPreferences();
         this.initializeEventListeners();
+        this.initializeTimer();
+        this.updateStatsDisplay();
 
         // Fetch latest game state to ensure sync
         this.syncGameState();
+    }
+
+    loadStats() {
+        const stats = localStorage.getItem('chessStats');
+        if (stats) {
+            const parsed = JSON.parse(stats);
+            this.stats = {
+                wins: parsed.wins || 0,
+                losses: parsed.losses || 0,
+                streak: parsed.streak || 0,
+                bestStreak: parsed.bestStreak || 0
+            };
+        } else {
+            this.stats = { wins: 0, losses: 0, streak: 0, bestStreak: 0 };
+        }
+    }
+
+    saveStats() {
+        localStorage.setItem('chessStats', JSON.stringify(this.stats));
+        this.updateStatsDisplay();
+    }
+
+    updateStatsDisplay() {
+        const winsEl = document.getElementById('wins-count');
+        const lossesEl = document.getElementById('losses-count');
+        const streakEl = document.getElementById('streak-count');
+
+        if (winsEl) winsEl.textContent = this.stats.wins;
+        if (lossesEl) lossesEl.textContent = this.stats.losses;
+        if (streakEl) {
+            streakEl.textContent = this.stats.streak;
+            // Add fire animation for high streaks
+            const streakItem = streakEl.closest('.stat-item');
+            if (streakItem) {
+                streakItem.classList.toggle('on-fire', this.stats.streak >= 3);
+            }
+        }
+    }
+
+    recordWin() {
+        this.stats.wins++;
+        this.stats.streak = Math.max(0, this.stats.streak) + 1;
+        if (this.stats.streak > this.stats.bestStreak) {
+            this.stats.bestStreak = this.stats.streak;
+        }
+        this.saveStats();
+        this.showConfetti();
+    }
+
+    recordLoss() {
+        this.stats.losses++;
+        this.stats.streak = Math.min(0, this.stats.streak) - 1;
+        this.saveStats();
+    }
+
+    loadPreferences() {
+        const theme = localStorage.getItem('chessTheme') || 'dark';
+        const sound = localStorage.getItem('chessSound') !== 'false';
+
+        this.soundEnabled = sound;
+        this.applyTheme(theme);
+        this.updateSoundIcon();
+    }
+
+    applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('chessTheme', theme);
+        this.updateThemeIcon();
+    }
+
+    toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme') || 'dark';
+        const next = current === 'dark' ? 'light' : 'dark';
+        this.applyTheme(next);
+        this.playSound('click');
+    }
+
+    updateThemeIcon() {
+        const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+        document.body.classList.toggle('light-theme', theme === 'light');
+    }
+
+    toggleSound() {
+        this.soundEnabled = !this.soundEnabled;
+        localStorage.setItem('chessSound', this.soundEnabled);
+        this.updateSoundIcon();
+        if (this.soundEnabled) {
+            this.playSound('click');
+        }
+    }
+
+    updateSoundIcon() {
+        document.body.classList.toggle('sound-off', !this.soundEnabled);
+    }
+
+    playSound(type) {
+        if (!this.soundEnabled) return;
+
+        // Create audio context for simple sounds
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            const sounds = {
+                move: { freq: 300, duration: 0.1 },
+                capture: { freq: 200, duration: 0.15 },
+                check: { freq: 400, duration: 0.2 },
+                click: { freq: 500, duration: 0.05 },
+                win: { freq: 523, duration: 0.3 },
+                lose: { freq: 150, duration: 0.4 }
+            };
+
+            const sound = sounds[type] || sounds.click;
+            oscillator.frequency.value = sound.freq;
+            oscillator.type = 'sine';
+            gainNode.gain.value = 0.1;
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + sound.duration);
+        } catch (e) {
+            // Audio not supported
+        }
+    }
+
+    initializeTimer() {
+        this.updateTimerDisplay();
+    }
+
+    startTimer() {
+        if (this.timerInterval) return;
+
+        this.timerInterval = setInterval(() => {
+            if (this.gameOver) {
+                this.stopTimer();
+                return;
+            }
+
+            if (this.currentTurn === 'white') {
+                this.whiteTime = Math.max(0, this.whiteTime - 1);
+            } else {
+                this.blackTime = Math.max(0, this.blackTime - 1);
+            }
+
+            this.updateTimerDisplay();
+
+            // Check for timeout
+            if (this.whiteTime === 0 || this.blackTime === 0) {
+                this.handleTimeout();
+            }
+        }, 1000);
+    }
+
+    stopTimer() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+    }
+
+    resetTimer() {
+        this.stopTimer();
+        this.whiteTime = 600;
+        this.blackTime = 600;
+        this.updateTimerDisplay();
+    }
+
+    updateTimerDisplay() {
+        const formatTime = (seconds) => {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        };
+
+        const whiteTimerEl = document.querySelector('#white-timer .timer-value');
+        const blackTimerEl = document.querySelector('#black-timer .timer-value');
+
+        if (whiteTimerEl) {
+            whiteTimerEl.textContent = formatTime(this.whiteTime);
+            whiteTimerEl.closest('.timer').classList.toggle('active', this.currentTurn === 'white' && !this.gameOver);
+            whiteTimerEl.closest('.timer').classList.toggle('low-time', this.whiteTime < 60);
+        }
+        if (blackTimerEl) {
+            blackTimerEl.textContent = formatTime(this.blackTime);
+            blackTimerEl.closest('.timer').classList.toggle('active', this.currentTurn === 'black' && !this.gameOver);
+            blackTimerEl.closest('.timer').classList.toggle('low-time', this.blackTime < 60);
+        }
+    }
+
+    handleTimeout() {
+        this.stopTimer();
+        const loser = this.whiteTime === 0 ? 'White' : 'Black';
+        this.showGameOverModal({
+            message: `${loser} ran out of time!`,
+            game_over: true
+        });
+        this.gameOver = true;
+
+        if (loser === 'Black') {
+            this.recordWin();
+        } else {
+            this.recordLoss();
+        }
+    }
+
+    showConfetti() {
+        const colors = ['#e94560', '#4ade80', '#fbbf24', '#60a5fa', '#c084fc'];
+        const confettiCount = 100;
+
+        for (let i = 0; i < confettiCount; i++) {
+            setTimeout(() => {
+                const confetti = document.createElement('div');
+                confetti.className = 'confetti';
+                confetti.style.left = Math.random() * 100 + 'vw';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                confetti.style.animationDelay = Math.random() * 0.5 + 's';
+                document.body.appendChild(confetti);
+
+                setTimeout(() => confetti.remove(), 4000);
+            }, i * 20);
+        }
+    }
+
+    flipBoard() {
+        this.boardFlipped = !this.boardFlipped;
+        const board = document.getElementById('chessboard');
+        if (board) {
+            board.classList.toggle('flipped', this.boardFlipped);
+        }
+        this.playSound('click');
     }
 
     async syncGameState() {
@@ -67,11 +314,12 @@ class ChessGame {
             square.addEventListener('click', (e) => this.handleSquareClick(e));
         });
 
-        // Mouse-based drag events (event delegation)
+        // Mouse and touch drag events (event delegation)
         const board = document.getElementById('chessboard');
         if (board) {
             board.style.touchAction = 'none';
             board.addEventListener('mousedown', (e) => this.handlePointerDown(e));
+            board.addEventListener('touchstart', (e) => this.handlePointerDown(e), { passive: false });
         }
 
         // New game button
@@ -90,6 +338,48 @@ class ChessGame {
         const resignBtn = document.getElementById('resign-btn');
         if (resignBtn) {
             resignBtn.addEventListener('click', () => this.resign());
+        }
+
+        // Save game button
+        const saveBtn = document.getElementById('save-game-btn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => this.saveGame());
+        }
+
+        // Load game button
+        const loadBtn = document.getElementById('load-game-btn');
+        if (loadBtn) {
+            loadBtn.addEventListener('click', () => this.showLoadGameModal());
+        }
+
+        // Load game file input
+        const loadInput = document.getElementById('load-game-input');
+        if (loadInput) {
+            loadInput.addEventListener('change', (e) => this.loadGameFile(e));
+        }
+
+        // Theme toggle
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', () => this.toggleTheme());
+        }
+
+        // Sound toggle
+        const soundToggle = document.getElementById('sound-toggle');
+        if (soundToggle) {
+            soundToggle.addEventListener('click', () => this.toggleSound());
+        }
+
+        // Undo button
+        const undoBtn = document.getElementById('undo-btn');
+        if (undoBtn) {
+            undoBtn.addEventListener('click', () => this.undoMove());
+        }
+
+        // Flip board button
+        const flipBtn = document.getElementById('flip-board-btn');
+        if (flipBtn) {
+            flipBtn.addEventListener('click', () => this.flipBoard());
         }
     }
 
@@ -249,6 +539,22 @@ class ChessGame {
             });
 
             if (data.success) {
+                // Start timer on first move
+                if (!this.timerInterval) {
+                    this.startTimer();
+                }
+
+                // Play appropriate sound
+                if (data.captured) {
+                    this.playSound('capture');
+                } else {
+                    this.playSound('move');
+                }
+
+                if (data.in_check) {
+                    this.playSound('check');
+                }
+
                 // Update the board
                 this.updateBoard(data.game_state);
                 this.updateGameStatus(data);
@@ -256,7 +562,19 @@ class ChessGame {
                 // Check if game is over
                 if (data.game_over) {
                     this.gameOver = true;
+                    this.stopTimer();
                     this.showGameOverModal(data);
+
+                    // Record win/loss based on result
+                    if (data.message && data.message.includes('wins')) {
+                        if (data.message.includes('White wins')) {
+                            this.recordWin();
+                            this.playSound('win');
+                        } else {
+                            this.recordLoss();
+                            this.playSound('lose');
+                        }
+                    }
                 } else {
                     this.maybeRequestAiMove(data.game_state);
                 }
@@ -353,22 +671,10 @@ class ChessGame {
 
     createPieceElement(pieceData) {
         const piece = document.createElement('div');
-        piece.className = `piece ${pieceData.color}`;
+        piece.className = `piece ${pieceData.color} ${pieceData.type}`;
         piece.dataset.pieceType = pieceData.type;
         piece.dataset.pieceColor = pieceData.color;
         piece.draggable = false;
-
-        // Unicode symbols for pieces
-        const symbols = {
-            'pawn': { 'white': '♙', 'black': '♟' },
-            'rook': { 'white': '♖', 'black': '♜' },
-            'knight': { 'white': '♘', 'black': '♞' },
-            'bishop': { 'white': '♗', 'black': '♝' },
-            'queen': { 'white': '♕', 'black': '♛' },
-            'king': { 'white': '♔', 'black': '♚' },
-        };
-
-        piece.textContent = symbols[pieceData.type][pieceData.color];
         return piece;
     }
 
@@ -413,27 +719,40 @@ class ChessGame {
         if (!moveHistoryDiv) return;
 
         if (moveHistory.length === 0) {
-            moveHistoryDiv.innerHTML = '<p class="no-moves">No moves yet</p>';
+            moveHistoryDiv.innerHTML = '<div class="no-moves">No moves yet</div>';
         } else {
-            const ol = document.createElement('ol');
-            ol.start = 1;
+            const container = document.createElement('div');
+            container.className = 'move-list';
 
-            // Pair moves: white and black together
+            // Pair moves: white and black together with move numbers
             for (let i = 0; i < moveHistory.length; i += 2) {
-                const li = document.createElement('li');
+                const moveNum = Math.floor(i / 2) + 1;
                 const whiteMove = moveHistory[i].notation;
                 const blackMove = i + 1 < moveHistory.length ? moveHistory[i + 1].notation : '';
 
-                if (blackMove) {
-                    li.textContent = `${whiteMove}  ${blackMove}`;
-                } else {
-                    li.textContent = whiteMove;
-                }
-                ol.appendChild(li);
+                const row = document.createElement('div');
+                row.className = 'move-row';
+
+                const numSpan = document.createElement('span');
+                numSpan.className = 'move-number';
+                numSpan.textContent = `${moveNum}.`;
+
+                const whiteSpan = document.createElement('span');
+                whiteSpan.className = 'move-white';
+                whiteSpan.textContent = whiteMove;
+
+                const blackSpan = document.createElement('span');
+                blackSpan.className = 'move-black';
+                blackSpan.textContent = blackMove || '';
+
+                row.appendChild(numSpan);
+                row.appendChild(whiteSpan);
+                row.appendChild(blackSpan);
+                container.appendChild(row);
             }
 
             moveHistoryDiv.innerHTML = '';
-            moveHistoryDiv.appendChild(ol);
+            moveHistoryDiv.appendChild(container);
 
             // Scroll to bottom
             moveHistoryDiv.scrollTop = moveHistoryDiv.scrollHeight;
@@ -509,6 +828,7 @@ class ChessGame {
 
             if (data.success) {
                 this.gameOver = false;
+                this.resetTimer();
                 this.updateBoard(data.game_state);
                 this.updateGameStatus({
                     message: data.message || "New game started",
@@ -517,6 +837,7 @@ class ChessGame {
                 this.updateMoveHistory([]);
                 this.hideGameOverModal();
                 this.deselectSquare();
+                this.playSound('click');
             }
         } catch (error) {
             console.error('Error starting new game:', error);
@@ -549,6 +870,9 @@ class ChessGame {
 
             if (data.success) {
                 this.gameOver = true;
+                this.stopTimer();
+                this.recordLoss();
+                this.playSound('lose');
                 this.showGameOverModal(data);
             }
         } catch (error) {
@@ -563,8 +887,54 @@ class ChessGame {
         });
     }
 
+    cleanupDragState() {
+        // Remove event listeners
+        if (this.pointerMoveHandler) {
+            document.removeEventListener('mousemove', this.pointerMoveHandler);
+            document.removeEventListener('touchmove', this.pointerMoveHandler);
+        }
+        if (this.pointerUpHandler) {
+            document.removeEventListener('mouseup', this.pointerUpHandler);
+            document.removeEventListener('touchend', this.pointerUpHandler);
+            document.removeEventListener('touchcancel', this.pointerUpHandler);
+        }
+        this.pointerMoveHandler = null;
+        this.pointerUpHandler = null;
+
+        // Remove dragging class from source piece
+        if (this.draggingPiece) {
+            this.draggingPiece.classList.remove('dragging');
+            this.draggingPiece = null;
+        }
+
+        // Clear visual states
+        this.clearDragGhost();
+        this.clearDragOver();
+        if (this.activeDropSquare) {
+            this.activeDropSquare.classList.remove('drag-over');
+            this.activeDropSquare = null;
+        }
+
+        // Reset drag state
+        this.dragActive = false;
+        this.dragMoved = false;
+        this.dragStart = null;
+        this.dragSymbol = null;
+        this.pendingLegalMoves = null;
+    }
+
     handlePointerDown(event) {
-        if (event.button !== 0 || this.gameOver || this.isBusy) {
+        // Handle both mouse and touch events
+        const isTouch = event.type === 'touchstart';
+        const clientX = isTouch ? event.touches[0].clientX : event.clientX;
+        const clientY = isTouch ? event.touches[0].clientY : event.clientY;
+
+        // Only handle left mouse button for mouse events
+        if (!isTouch && event.button !== 0) {
+            return;
+        }
+
+        if (this.gameOver || this.isBusy) {
             return;
         }
 
@@ -578,6 +948,9 @@ class ChessGame {
             return;
         }
 
+        // Prevent default to avoid text selection and scrolling
+        event.preventDefault();
+
         const square = piece.parentElement;
         const row = parseInt(square.dataset.row);
         const col = parseInt(square.dataset.col);
@@ -585,14 +958,26 @@ class ChessGame {
         this.debug('drag:start', { row, col, type: event.type });
         this.dragActive = true;
         this.dragMoved = false;
-        this.dragStart = { x: event.clientX, y: event.clientY };
+        this.dragStart = { x: clientX, y: clientY };
         this.draggingFrom = [row, col];
         this.dragSymbol = piece.textContent;
+        this.draggingPiece = piece;
+        this.pendingLegalMoves = null;
 
+        // Bind event handlers
         this.pointerMoveHandler = (e) => this.handlePointerMove(e);
         this.pointerUpHandler = (e) => this.handlePointerUp(e);
+
+        // Add listeners for both mouse and touch
         document.addEventListener('mousemove', this.pointerMoveHandler);
         document.addEventListener('mouseup', this.pointerUpHandler);
+        document.addEventListener('touchmove', this.pointerMoveHandler, { passive: false });
+        document.addEventListener('touchend', this.pointerUpHandler);
+        document.addEventListener('touchcancel', this.pointerUpHandler);
+
+        // Handle cleanup if window loses focus
+        this.blurHandler = () => this.cleanupDragState();
+        window.addEventListener('blur', this.blurHandler, { once: true });
     }
 
     handlePointerMove(event) {
@@ -600,33 +985,56 @@ class ChessGame {
             return;
         }
 
+        // Handle both mouse and touch events
+        const isTouch = event.type === 'touchmove';
+        const clientX = isTouch ? event.touches[0].clientX : event.clientX;
+        const clientY = isTouch ? event.touches[0].clientY : event.clientY;
+
+        // Prevent scrolling on touch devices
+        if (isTouch) {
+            event.preventDefault();
+        }
+
         if (!this.dragMoved) {
-            const dx = event.clientX - this.dragStart.x;
-            const dy = event.clientY - this.dragStart.y;
+            const dx = clientX - this.dragStart.x;
+            const dy = clientY - this.dragStart.y;
+            // Dead zone of 4 pixels (16 = 4^2)
             if ((dx * dx) + (dy * dy) < 16) {
                 return;
             }
             this.dragMoved = true;
             this.suppressClick = true;
-            this.createDragGhost(this.dragSymbol);
+            this.createDragGhost(this.draggingPiece);
+
+            // Add dragging class to source piece for visual feedback
+            if (this.draggingPiece) {
+                this.draggingPiece.classList.add('dragging');
+            }
+
             if (this.draggingFrom) {
                 const [row, col] = this.draggingFrom;
                 const fromSquare = document.querySelector(
                     `.square[data-row="${row}"][data-col="${col}"]`
                 );
+                // Save draggingFrom before deselectSquare clears it
+                const savedDraggingFrom = this.draggingFrom;
                 this.deselectSquare();
+                // Restore draggingFrom since we're still dragging
+                this.draggingFrom = savedDraggingFrom;
                 if (fromSquare) {
                     this.selectedSquare = [row, col];
                     fromSquare.classList.add('selected');
                 }
-                this.fetchLegalMoves(row, col, true);
+                // Store the promise so we can await it in handlePointerUp if needed
+                this.pendingLegalMoves = this.fetchLegalMoves(row, col, true);
             }
         }
+
         if (this.dragMoved) {
-            this.moveDragGhost(event.clientX, event.clientY);
+            this.moveDragGhost(clientX, clientY);
         }
 
-        const square = document.elementFromPoint(event.clientX, event.clientY)?.closest('.square');
+        const square = document.elementFromPoint(clientX, clientY)?.closest('.square');
         if (square === this.activeDropSquare) {
             return;
         }
@@ -657,24 +1065,70 @@ class ChessGame {
             return;
         }
 
+        // Remove blur handler since we're handling the end properly
+        if (this.blurHandler) {
+            window.removeEventListener('blur', this.blurHandler);
+            this.blurHandler = null;
+        }
+
+        // Handle both mouse and touch events
+        const isTouch = event.type === 'touchend' || event.type === 'touchcancel';
+        let clientX, clientY;
+
+        if (isTouch) {
+            // For touchend, use changedTouches since touches array is empty
+            if (event.changedTouches && event.changedTouches.length > 0) {
+                clientX = event.changedTouches[0].clientX;
+                clientY = event.changedTouches[0].clientY;
+            } else {
+                // Fallback to last known position from dragStart
+                clientX = this.dragStart?.x || 0;
+                clientY = this.dragStart?.y || 0;
+            }
+        } else {
+            clientX = event.clientX;
+            clientY = event.clientY;
+        }
+
+        // Remove event listeners
         document.removeEventListener('mousemove', this.pointerMoveHandler);
         document.removeEventListener('mouseup', this.pointerUpHandler);
+        document.removeEventListener('touchmove', this.pointerMoveHandler);
+        document.removeEventListener('touchend', this.pointerUpHandler);
+        document.removeEventListener('touchcancel', this.pointerUpHandler);
         this.pointerMoveHandler = null;
         this.pointerUpHandler = null;
 
-        const square = document.elementFromPoint(event.clientX, event.clientY)?.closest('.square');
+        // Remove dragging class from source piece
+        if (this.draggingPiece) {
+            this.draggingPiece.classList.remove('dragging');
+            this.draggingPiece = null;
+        }
+
+        const square = document.elementFromPoint(clientX, clientY)?.closest('.square');
+
         if (!this.dragMoved) {
             this.dragActive = false;
             this.dragStart = null;
             this.draggingFrom = null;
             this.dragSymbol = null;
+            this.pendingLegalMoves = null;
             this.clearDragGhost();
             return;
         }
+
         this.debug('drag:drop', {
             to: square ? [parseInt(square.dataset.row), parseInt(square.dataset.col)] : null
         });
+
         if (square && this.draggingFrom) {
+            // Wait for pending legal moves fetch to complete
+            if (this.pendingLegalMoves) {
+                await this.pendingLegalMoves;
+                this.pendingLegalMoves = null;
+            }
+
+            // If still no legal moves, fetch them now
             if (this.legalMoves.length === 0) {
                 await this.fetchLegalMoves(this.draggingFrom[0], this.draggingFrom[1], false);
             }
@@ -707,19 +1161,20 @@ class ChessGame {
 
         this.dragActive = false;
         this.dragMoved = false;
+        this.pendingLegalMoves = null;
         this.clearDragGhost();
         this.clearDragOver();
         this.deselectSquare();
     }
 
-    createDragGhost(symbol) {
-        if (!symbol) {
+    createDragGhost(pieceElement) {
+        if (!pieceElement) {
             return;
         }
         this.clearDragGhost();
-        const ghost = document.createElement('div');
-        ghost.className = 'drag-ghost';
-        ghost.textContent = symbol;
+        const ghost = pieceElement.cloneNode(true);
+        ghost.className = pieceElement.className + ' drag-ghost';
+        ghost.classList.remove('dragging');
         document.body.appendChild(ghost);
         this.dragGhost = ghost;
     }
@@ -736,6 +1191,136 @@ class ChessGame {
         if (this.dragGhost) {
             this.dragGhost.remove();
             this.dragGhost = null;
+        }
+    }
+
+    async saveGame() {
+        try {
+            const response = await fetch('/game-state', { cache: 'no-store' });
+            const gameState = await response.json();
+
+            const saveData = {
+                version: 1,
+                timestamp: new Date().toISOString(),
+                gameState: gameState
+            };
+
+            const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            const date = new Date().toISOString().slice(0, 10);
+            const moveCount = (gameState.move_history || []).length;
+            a.download = `chess-game-${date}-${moveCount}moves.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            this.showNotification('Game saved!', 'success');
+        } catch (error) {
+            console.error('Error saving game:', error);
+            this.showNotification('Failed to save game', 'error');
+        }
+    }
+
+    showLoadGameModal() {
+        const input = document.getElementById('load-game-input');
+        if (input) {
+            input.click();
+        }
+    }
+
+    async loadGameFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const saveData = JSON.parse(text);
+
+            if (!saveData.gameState) {
+                throw new Error('Invalid save file format');
+            }
+
+            const response = await fetch('/load-game', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ game_state: saveData.gameState })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.gameOver = data.game_state.game_over;
+                this.currentTurn = data.game_state.current_turn;
+                this.updateBoard(data.game_state);
+                this.updateGameStatus({
+                    message: data.message || 'Game loaded',
+                    in_check: data.game_state.in_check || false
+                });
+                this.hideGameOverModal();
+                this.deselectSquare();
+                this.showNotification('Game loaded!', 'success');
+            } else {
+                throw new Error(data.message || 'Failed to load game');
+            }
+        } catch (error) {
+            console.error('Error loading game:', error);
+            this.showNotification('Failed to load game: ' + error.message, 'error');
+        }
+
+        // Reset file input
+        event.target.value = '';
+    }
+
+    showNotification(message, type = 'info') {
+        // Remove existing notification
+        const existing = document.querySelector('.notification');
+        if (existing) existing.remove();
+
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        // Trigger animation
+        setTimeout(() => notification.classList.add('show'), 10);
+
+        // Remove after 3 seconds
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
+
+    async undoMove() {
+        if (this.gameOver || this.isBusy) return;
+
+        try {
+            const response = await fetch('/undo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.updateBoard(data.game_state);
+                this.updateGameStatus({
+                    message: 'Move undone',
+                    in_check: data.game_state.in_check || false
+                });
+                this.deselectSquare();
+                this.playSound('click');
+                this.showNotification('Move undone', 'info');
+            } else {
+                this.showNotification(data.message || 'Cannot undo', 'error');
+            }
+        } catch (error) {
+            console.error('Error undoing move:', error);
+            this.showNotification('Failed to undo move', 'error');
         }
     }
 

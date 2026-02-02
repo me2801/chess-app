@@ -9,6 +9,7 @@ dependencies = [
     "flask-session>=0.8.0",
     "flask-restx>=1.3.0",
     "python-dotenv>=1.0.1",
+    "asgiref>=3.7.0",
 ]
 
 [project.optional-dependencies]
@@ -19,6 +20,7 @@ dev = [
 
 [project.scripts]
 chess-web = "chess_web.app:main"
+chess-web-asgi = "chess_web.asgi:app"
 
 [build-system]
 requires = ["hatchling"]

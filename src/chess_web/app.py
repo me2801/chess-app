@@ -2,6 +2,7 @@
 
 from flask import Flask, render_template, request, jsonify, session
 from flask_session import Session
+from asgiref.wsgi import WsgiToAsgi
 from .models import Game
 from dotenv import load_dotenv
 import os
@@ -37,8 +38,8 @@ def create_app():
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
     app.config['SESSION_TYPE'] = 'filesystem'
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
-    # Support nested deployment under a subdirectory
-    app.config['APPLICATION_ROOT'] = os.environ.get('APPLICATION_ROOT', '/')
+    # Support nested deployment under a subdirectory (ROOT_PATH for ASGI, APPLICATION_ROOT for WSGI)
+    app.config['APPLICATION_ROOT'] = os.environ.get('ROOT_PATH', os.environ.get('APPLICATION_ROOT', '/'))
     app.config['DEBUG_UI'] = os.environ.get('DEBUG', '').lower() in {'1', 'true', 'yes', 'on'}
     app.config['SESSION_FILE_DIR'] = os.path.abspath(
         os.path.join(os.path.dirname(__file__), '..', '..', '..', 'flask_session')
@@ -316,6 +317,17 @@ def main():
 
     app = create_app()
     app.run(debug=True, host='127.0.0.1', port=5000)
+
+
+# ASGI application for uvicorn/ASGI servers
+def create_asgi_app():
+    """Create ASGI-wrapped Flask application for deployment behind ASGI servers."""
+    flask_app = create_app()
+    return WsgiToAsgi(flask_app)
+
+
+# Default ASGI app instance for uvicorn target: chess_web.app:asgi_app
+asgi_app = create_asgi_app()
 
 
 # For development

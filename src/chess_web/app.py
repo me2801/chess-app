@@ -1,12 +1,16 @@
 """Flask application for chess game."""
 
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory, abort
 from flask_session import Session
 from asgiref.wsgi import WsgiToAsgi
 from .models import Game
 from dotenv import load_dotenv
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from urllib.parse import quote
+import asyncio
 import os
 import shutil
+import threading
 import time
 import uuid
 
@@ -35,8 +39,13 @@ def create_app():
     app = Flask(__name__)
 
     # Configure session
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+    app.config['SECRET_KEY'] = os.environ.get('METASUITE_SESSION_SECRET', 'dev-secret-change-in-production')
     app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_COOKIE_NAME'] = os.environ.get('METASUITE_SESSION_COOKIE_NAME', 'metasuite_session')
+    app.config['SESSION_COOKIE_SECURE'] = os.environ.get('METASUITE_SECURE_COOKIES', 'false').lower() in {
+        '1', 'true', 'yes', 'on'
+    }
+    app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('METASUITE_SESSION_COOKIE_SAMESITE', 'Lax')
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
     # Support nested deployment under a subdirectory (ROOT_PATH for ASGI, APPLICATION_ROOT for WSGI)
     app.config['APPLICATION_ROOT'] = os.environ.get('ROOT_PATH', os.environ.get('APPLICATION_ROOT', '/'))
@@ -58,9 +67,183 @@ def create_app():
                 pass
     Session(app)
 
+    from supabase_auth import AuthConfig, get_client, supabase_anon_key, supabase_url
+    import supabase_auth as supabase_auth_pkg
+
+    auth_config = AuthConfig(
+        app_name=os.environ.get('APP_NAME', 'Chess Web'),
+        app_short_name=os.environ.get('APP_SHORT_NAME', 'Chess'),
+        login_title=os.environ.get('AUTH_LOGIN_TITLE', 'Sign in'),
+        login_subtitle=os.environ.get('AUTH_LOGIN_SUBTITLE', 'Access your games'),
+        logout_title=os.environ.get('AUTH_LOGOUT_TITLE', 'Signed out'),
+        logout_subtitle=os.environ.get('AUTH_LOGOUT_SUBTITLE', 'You have been successfully signed out.'),
+        home_path='/',
+        login_path='/login',
+        logout_path='/logout',
+        login_api_path='/api/auth/login',
+        session_api_path='/api/auth/session',
+        css_path='/static/auth.css',
+    )
+
+    auth_template_dir = os.path.join(
+        os.path.dirname(supabase_auth_pkg.__file__), 'front', 'templates'
+    )
+    auth_templates = Environment(
+        loader=FileSystemLoader(auth_template_dir),
+        autoescape=select_autoescape(['html', 'xml'])
+    )
+
+    def _prefixed_path(path: str) -> str:
+        root = (app.config.get('APPLICATION_ROOT') or '').rstrip('/')
+        if not root or root == '/':
+            return path
+        if path == root or path.startswith(root + '/'):
+            return path
+        if path.startswith('/'):
+            return f"{root}{path}"
+        return f"{root}/{path}"
+
+    def _ensure_prefixed_path(path: str) -> str:
+        return _prefixed_path(path)
+
+    def _safe_next_path(raw: str) -> str:
+        if not raw or not raw.startswith('/'):
+            return auth_config.home_path
+        return raw
+
+    def _render_auth_template(template_name: str, **context):
+        template = auth_templates.get_template(template_name)
+        html = template.render(
+            **context,
+            url_for=url_for,
+        )
+        return html
+
     # Register the API blueprint with Swagger documentation
     from .api import api_bp
     app.register_blueprint(api_bp)
+
+    def _require_auth():
+        from .auth import get_current_user
+
+        user, error = get_current_user(request)
+        if not user:
+            return None, (jsonify({'success': False, 'message': error or 'Unauthorized'}), 401)
+        return user, None
+
+    def _reset_game_session():
+        auth = session.get('auth')
+        session.clear()
+        if auth:
+            session['auth'] = auth
+
+    def _store_game_state(game):
+        from .auth import get_current_user
+        from .storage import save_game_state, StorageError
+
+        user, _error = get_current_user(request)
+        if not user:
+            return
+        game_state = game.to_dict()
+
+        def _persist(user_snapshot, state_snapshot):
+            try:
+                save_game_state(user_snapshot, state_snapshot)
+            except StorageError as exc:
+                app.logger.warning("Database save failed: %s", exc)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                app.logger.warning("Unexpected save error: %s", exc)
+
+        threading.Thread(
+            target=_persist,
+            args=(user, game_state),
+            daemon=True
+        ).start()
+
+    def _login_redirect(next_path: str):
+        safe_next = _safe_next_path(next_path)
+        safe_next = _ensure_prefixed_path(safe_next)
+        login_url = _prefixed_path(auth_config.login_path)
+        return redirect(f"{login_url}?next={quote(safe_next)}")
+
+    @app.route('/static/auth.css', endpoint='auth_css')
+    def auth_css():
+        """Serve overridden auth CSS."""
+        return send_from_directory(os.path.join(app.static_folder, 'css'), 'auth.css')
+
+    @app.route('/login')
+    def login():
+        """Render the Supabase auth login form."""
+        next_path = request.args.get('next', '') or auth_config.home_path
+        next_path = _ensure_prefixed_path(_safe_next_path(next_path))
+        return _render_auth_template(
+            'login.html',
+            request=request,
+            next=next_path,
+            supabase_configured=bool(supabase_url() and supabase_anon_key()),
+            config=auth_config,
+            prefixed=lambda path: _prefixed_path(path),
+        )
+
+    @app.route('/logout')
+    def logout():
+        """Clear session and render logout page."""
+        session.clear()
+        return _render_auth_template(
+            'logout.html',
+            request=request,
+            config=auth_config,
+            prefixed=lambda path: _prefixed_path(path),
+        )
+
+    @app.route('/api/auth/login', methods=['POST'])
+    @app.route('/api/auth/session', methods=['POST'])
+    def auth_login():
+        """Handle login via Supabase password grant."""
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or '').strip()
+        password = (data.get('password') or '').strip()
+        next_path = (data.get('next') or '').strip() or auth_config.home_path
+        next_path = _ensure_prefixed_path(_safe_next_path(next_path))
+
+        if not email or not password:
+            return jsonify({'ok': False, 'error': 'Email and password are required.'}), 400
+
+        client = get_client()
+        if not client.is_configured:
+            return jsonify({'ok': False, 'error': 'Supabase is not configured.'}), 503
+
+        try:
+            payload = asyncio.run(client.sign_in_with_password(email, password))
+        except Exception as exc:  # pragma: no cover - external dependency
+            return jsonify({'ok': False, 'error': f'Authentication failed: {exc}'}), 401
+
+        if not payload:
+            return jsonify({'ok': False, 'error': 'Invalid credentials.'}), 401
+
+        user = payload.get('user') or {}
+        user_id = user.get('id')
+        if not user_id:
+            return jsonify({'ok': False, 'error': 'Invalid credentials.'}), 401
+
+        app_metadata = user.get('app_metadata') or {}
+        user_metadata = user.get('user_metadata') or {}
+        roles = app_metadata.get('roles') or []
+        if isinstance(roles, str):
+            roles = [roles]
+
+        session['auth'] = {
+            'user_id': user_id,
+            'email': user.get('email') or email,
+            'name': user_metadata.get('full_name') or user_metadata.get('name') or email,
+            'roles': roles,
+            'is_admin': 'admin' in [r.lower() for r in roles],
+            'metadata': user_metadata,
+            'access_token': payload.get('access_token'),
+        }
+        session.modified = True
+
+        return jsonify({'ok': True, 'redirect': next_path})
 
     @app.after_request
     def disable_cache(response):
@@ -72,18 +255,116 @@ def create_app():
     @app.route('/')
     def index():
         """Main game page."""
+        from .auth import get_current_user
+
+        user, _error = get_current_user(request)
+        if not user:
+            next_path = request.full_path
+            if next_path.endswith('?'):
+                next_path = next_path[:-1]
+            return _login_redirect(next_path or '/')
+
         # Always start a fresh game on page load to avoid stale history.
-        session.clear()
+        _reset_game_session()
         session['server_start_id'] = app.config['SERVER_START_ID']
         game = Game()
         session['game'] = game.to_dict()
 
-        return render_template('game.html', game=game, debug_ui=app.config['DEBUG_UI'])
+        return render_template(
+            'game.html',
+            game=game,
+            debug_ui=app.config['DEBUG_UI'],
+            show_game_controls=True,
+            active_nav='game'
+        )
+
+    @app.route('/review')
+    def review():
+        """Review finished games."""
+        from .auth import get_current_user
+
+        user, _error = get_current_user(request)
+        if not user:
+            next_path = request.full_path
+            if next_path.endswith('?'):
+                next_path = next_path[:-1]
+            return _login_redirect(next_path or '/review')
+
+        game = Game()
+        return render_template(
+            'review.html',
+            game=game,
+            debug_ui=app.config['DEBUG_UI'],
+            show_game_controls=False,
+            active_nav='review'
+        )
+
+    @app.route('/resume/<string:game_id>')
+    def resume_game(game_id: str):
+        """Resume an unfinished game."""
+        from .auth import get_current_user
+        from .storage import get_game, StorageError
+
+        user, _error = get_current_user(request)
+        if not user:
+            next_path = request.full_path
+            if next_path.endswith('?'):
+                next_path = next_path[:-1]
+            return _login_redirect(next_path or f'/resume/{game_id}')
+
+        try:
+            record = get_game(game_id, user.id)
+        except StorageError:
+            abort(500)
+
+        if not record:
+            abort(404)
+
+        game_state = record.get('game_state') or {}
+        try:
+            game = Game.from_dict(game_state)
+        except Exception:
+            abort(400)
+
+        session['game'] = game.to_dict()
+        session['server_start_id'] = app.config['SERVER_START_ID']
+        session.modified = True
+
+        return render_template(
+            'game.html',
+            game=game,
+            debug_ui=app.config['DEBUG_UI'],
+            show_game_controls=True,
+            active_nav='game'
+        )
+
+    @app.route('/leaderboard')
+    def leaderboard():
+        """Leaderboard view."""
+        from .auth import get_current_user
+
+        user, _error = get_current_user(request)
+        if not user:
+            next_path = request.full_path
+            if next_path.endswith('?'):
+                next_path = next_path[:-1]
+            return _login_redirect(next_path or '/leaderboard')
+
+        return render_template(
+            'leaderboard.html',
+            debug_ui=app.config['DEBUG_UI'],
+            show_game_controls=False,
+            active_nav='leaderboard'
+        )
 
     @app.route('/new-game', methods=['POST'])
     def new_game():
         """Start a new game."""
-        session.clear()
+        _user, error = _require_auth()
+        if error:
+            return error
+
+        _reset_game_session()
         session['server_start_id'] = app.config['SERVER_START_ID']
         game = Game()
         session['game'] = game.to_dict()
@@ -97,6 +378,10 @@ def create_app():
     @app.route('/move', methods=['POST'])
     def make_move():
         """Process a move request."""
+        _user, error = _require_auth()
+        if error:
+            return error
+
         data = request.get_json(silent=True)
         if not data:
             return jsonify({
@@ -137,11 +422,17 @@ def create_app():
         # Include full game state in response
         result['game_state'] = game.to_dict()
 
+        _store_game_state(game)
+
         return jsonify(result)
 
     @app.route('/ai-move', methods=['POST'])
     def ai_move():
         """Make an AI move if it's AI's turn."""
+        _user, error = _require_auth()
+        if error:
+            return error
+
         if 'game' not in session:
             return jsonify({
                 'success': False,
@@ -163,11 +454,16 @@ def create_app():
         session.modified = True
         result['game_state'] = game.to_dict()
 
+        _store_game_state(game)
         return jsonify(result)
 
     @app.route('/legal-moves', methods=['POST'])
     def get_legal_moves():
         """Get legal moves for a piece."""
+        _user, error = _require_auth()
+        if error:
+            return error
+
         data = request.get_json(silent=True)
         if not data:
             return jsonify({
@@ -204,8 +500,12 @@ def create_app():
     @app.route('/game-state', methods=['GET'])
     def get_game_state():
         """Get current game state."""
+        _user, error = _require_auth()
+        if error:
+            return error
+
         if session.get('server_start_id') != app.config['SERVER_START_ID']:
-            session.clear()
+            _reset_game_session()
             session['server_start_id'] = app.config['SERVER_START_ID']
             game = Game()
             session['game'] = game.to_dict()
@@ -220,6 +520,10 @@ def create_app():
     @app.route('/load-game', methods=['POST'])
     def load_game():
         """Load a saved game state."""
+        _user, error = _require_auth()
+        if error:
+            return error
+
         data = request.get_json(silent=True)
         if not data or 'game_state' not in data:
             return jsonify({
@@ -247,6 +551,10 @@ def create_app():
     @app.route('/undo', methods=['POST'])
     def undo_move():
         """Undo the last move."""
+        _user, error = _require_auth()
+        if error:
+            return error
+
         if 'game' not in session:
             return jsonify({
                 'success': False,
@@ -267,11 +575,17 @@ def create_app():
         if result['success']:
             result['game_state'] = game.to_dict()
 
+        _store_game_state(game)
+
         return jsonify(result)
 
     @app.route('/resign', methods=['POST'])
     def resign():
         """Handle player resignation."""
+        _user, error = _require_auth()
+        if error:
+            return error
+
         data = request.get_json()
         color = data.get('color', 'white')
 
@@ -292,6 +606,45 @@ def create_app():
         session['game'] = game.to_dict()
         session.modified = True
 
+        _store_game_state(game)
+
+        return jsonify(result)
+
+    @app.route('/timeout', methods=['POST'])
+    def timeout():
+        """Handle player timeout."""
+        _user, error = _require_auth()
+        if error:
+            return error
+
+        data = request.get_json(silent=True) or {}
+        color = data.get('color')
+        if color not in {'white', 'black'}:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid timeout color'
+            }), 400
+
+        if 'game' not in session:
+            return jsonify({
+                'success': False,
+                'message': 'No active game'
+            }), 400
+        if session.get('server_start_id') != app.config['SERVER_START_ID']:
+            return jsonify({
+                'success': False,
+                'message': 'Session expired'
+            }), 400
+
+        game = Game.from_dict(session['game'])
+        result = game.timeout(color)
+
+        session['game'] = game.to_dict()
+        session.modified = True
+
+        _store_game_state(game)
+
+        result['game_state'] = game.to_dict()
         return jsonify(result)
 
     return app

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Review Games{% endblock %}
+
+{% block content %}
+<div class="game-container review-container">
+    <div class="side-panel">
+        <div class="review-list-section">
+            <h3>Your Games</h3>
+            <div id="review-list" class="review-list">
+                <p class="no-moves">Loading games...</p>
+            </div>
+        </div>
+
+        <div class="review-moves-section">
+            <h3>Moves</h3>
+            <div id="review-moves" class="move-history">
+                <p class="no-moves">Select a game to see moves</p>
+            </div>
+        </div>
+
+        <div id="review-progress" class="review-progress">No game selected</div>
+    </div>
+
+    <div class="board-container">
+        <div class="chessboard" id="chessboard">
+            {% for row in range(8) %}
+                {% for col in range(8) %}
+                    {% set piece = game.board.get_piece(row, col) %}
+                    {% set is_light = (row + col) % 2 == 0 %}
+                    <div class="square {{ 'light' if is_light else 'dark' }}"
+                         data-row="{{ row }}"
+                         data-col="{{ col }}">
+                        {% if piece %}
+                            <div class="piece {{ piece.color }} {{ piece.__class__.__name__.lower() }}"
+                                 data-piece-type="{{ piece.__class__.__name__.lower() }}"
+                                 data-piece-color="{{ piece.color }}"></div>
+                        {% endif %}
+                        {% if col == 0 %}
+                            <span class="rank-label">{{ 8 - row }}</span>
+                        {% endif %}
+                        {% if row == 7 %}
+                            <span class="file-label">{{ 'abcdefgh'[col] }}</span>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/review.js', v=config['ASSET_VERSION']) }}"></script>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Leaderboard{% endblock %}
+
+{% block content %}
+<div class="leaderboard-container">
+    <div class="leaderboard-panel">
+        <h2>Leaderboard</h2>
+        <div id="leaderboard-list" class="leaderboard-list">
+            <p class="no-moves">Loading leaderboard...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/leaderboard.js', v=config['ASSET_VERSION']) }}"></script>
+{% endblock %}

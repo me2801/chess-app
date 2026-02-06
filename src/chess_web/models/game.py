@@ -1,6 +1,7 @@
 """Chess game state management."""
 
 from typing import Optional, Tuple, List
+from datetime import datetime, timezone
 import copy
 import uuid
 
@@ -22,6 +23,7 @@ class Game:
         self.game_over = False
         self.winner = None
         self.status_message = "White's turn"
+        self.finished_at = None
         self.en_passant_target = None  # Track en passant opportunity
         self.halfmove_clock = 0  # For fifty-move rule
         self.position_history = []  # For threefold repetition
@@ -131,12 +133,14 @@ class Game:
 
         # Record move
         move_notation = self._get_move_notation(piece, from_pos, to_pos, captured)
+        promotion_used = piece.__class__.__name__.lower() if promoted else None
         self.move_history.append({
             'from': from_pos,
             'to': to_pos,
             'piece': piece.to_dict(),
             'captured': captured.to_dict() if captured else None,
-            'notation': move_notation
+            'notation': move_notation,
+            'promotion': promotion_used
         })
 
         # Switch turns
@@ -153,25 +157,20 @@ class Game:
 
         if in_check and not has_moves:
             # Checkmate
-            self.game_over = True
-            self.winner = 'black' if self.current_turn == 'white' else 'white'
-            self.status_message = f"Checkmate! {self.winner.capitalize()} wins!"
+            winner = 'black' if self.current_turn == 'white' else 'white'
+            self._set_game_over(f"Checkmate! {winner.capitalize()} wins!", winner)
         elif not has_moves:
             # Stalemate
-            self.game_over = True
-            self.status_message = "Stalemate! Game is a draw."
+            self._set_game_over("Stalemate! Game is a draw.")
         elif draw_by_fifty:
             # Fifty-move rule
-            self.game_over = True
-            self.status_message = "Draw by fifty-move rule!"
+            self._set_game_over("Draw by fifty-move rule!")
         elif draw_by_repetition:
             # Threefold repetition
-            self.game_over = True
-            self.status_message = "Draw by threefold repetition!"
+            self._set_game_over("Draw by threefold repetition!")
         elif draw_by_material:
             # Insufficient material
-            self.game_over = True
-            self.status_message = "Draw by insufficient material!"
+            self._set_game_over("Draw by insufficient material!")
         elif in_check:
             self.status_message = f"{self.current_turn.capitalize()} is in check!"
         else:
@@ -212,9 +211,28 @@ class Game:
         Returns:
             Dictionary with game result
         """
-        self.game_over = True
-        self.winner = 'black' if color == 'white' else 'white'
-        self.status_message = f"{color.capitalize()} resigned. {self.winner.capitalize()} wins!"
+        winner = 'black' if color == 'white' else 'white'
+        self._set_game_over(f"{color.capitalize()} resigned. {winner.capitalize()} wins!", winner)
+
+        return {
+            'success': True,
+            'message': self.status_message,
+            'game_over': True,
+            'winner': self.winner
+        }
+
+    def timeout(self, color: str) -> dict:
+        """
+        End the game due to a timeout.
+
+        Args:
+            color: Color of the player who ran out of time
+
+        Returns:
+            Dictionary with game result
+        """
+        winner = 'black' if color == 'white' else 'white'
+        self._set_game_over(f"Time out! {winner.capitalize()} wins!", winner)
 
         return {
             'success': True,
@@ -310,6 +328,7 @@ class Game:
         # Reset game over state
         self.game_over = False
         self.winner = None
+        self.finished_at = None
 
         # Update status
         in_check = self.board.is_in_check(self.current_turn)
@@ -474,7 +493,8 @@ class Game:
             'halfmove_clock': self.halfmove_clock,
             'position_history': copy.deepcopy(self.position_history),
             'ai_enabled': self.ai_enabled,
-            'ai_color': self.ai_color
+            'ai_color': self.ai_color,
+            'finished_at': self.finished_at
         }
 
     @classmethod
@@ -501,6 +521,7 @@ class Game:
         game.game_over = data['game_over']
         game.winner = data.get('winner')
         game.status_message = data['status_message']
+        game.finished_at = data.get('finished_at')
 
         # Restore en passant target
         en_passant = data.get('en_passant_target')
@@ -513,6 +534,18 @@ class Game:
         game.ai_color = data.get('ai_color', 'black')
 
         return game
+
+    def _mark_finished(self) -> None:
+        """Set finished timestamp if not already set."""
+        if not self.finished_at:
+            self.finished_at = datetime.now(timezone.utc).isoformat()
+
+    def _set_game_over(self, message: str, winner: Optional[str] = None) -> None:
+        """Set game over state with message and timestamp."""
+        self.game_over = True
+        self.winner = winner
+        self.status_message = message
+        self._mark_finished()
 
     @staticmethod
     def _deserialize_captured(items):

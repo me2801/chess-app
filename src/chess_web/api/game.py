@@ -1,9 +1,10 @@
 """Game state API endpoints."""
 
-from flask import session, current_app
+from flask import session, current_app, request
 from flask_restx import Namespace, Resource, fields
 
 from ..models import Game
+from ..auth import get_current_user
 
 ns = Namespace('game', description='Game state operations')
 
@@ -34,7 +35,8 @@ game_state_model = ns.model('GameState', {
     'game_over': fields.Boolean(description='Whether the game has ended'),
     'winner': fields.String(description='Winner color if game is over'),
     'status_message': fields.String(description='Current game status message'),
-    'in_check': fields.Boolean(description='Whether current player is in check')
+    'in_check': fields.Boolean(description='Whether current player is in check'),
+    'finished_at': fields.String(description='Timestamp when the game finished')
 })
 
 new_game_response = ns.model('NewGameResponse', {
@@ -58,7 +60,10 @@ legal_moves_response = ns.model('LegalMovesResponse', {
 def _get_game():
     """Get current game from session or create new one."""
     if session.get('server_start_id') != current_app.config['SERVER_START_ID']:
+        auth = session.get('auth')
         session.clear()
+        if auth:
+            session['auth'] = auth
         session['server_start_id'] = current_app.config['SERVER_START_ID']
         game = Game()
         session['game'] = game.to_dict()
@@ -72,11 +77,21 @@ def _get_game():
 
 def _validate_session():
     """Validate the session is active."""
+    user, error = get_current_user(request)
+    if not user:
+        return False, error or 'Unauthorized'
     if 'game' not in session:
         return False, 'No active game'
     if session.get('server_start_id') != current_app.config['SERVER_START_ID']:
         return False, 'Session expired'
     return True, None
+
+
+def _require_auth():
+    user, error = get_current_user(request)
+    if not user:
+        ns.abort(401, error or 'Unauthorized')
+    return user
 
 
 @ns.route('/state')
@@ -86,6 +101,7 @@ class GameState(Resource):
     @ns.response(200, 'Success')
     def get(self):
         """Get current game state."""
+        _require_auth()
         game = _get_game()
         return game.to_dict()
 
@@ -97,7 +113,11 @@ class NewGame(Resource):
     @ns.response(200, 'New game started')
     def post(self):
         """Start a new game."""
+        _require_auth()
+        auth = session.get('auth')
         session.clear()
+        if auth:
+            session['auth'] = auth
         session['server_start_id'] = current_app.config['SERVER_START_ID']
         game = Game()
         session['game'] = game.to_dict()

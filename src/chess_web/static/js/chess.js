@@ -28,6 +28,10 @@ class ChessGame {
         this.timerInterval = null;
         this.whiteTime = 600; // 10 minutes in seconds
         this.blackTime = 600;
+        this.reviewMode = false;
+        this.reviewStates = [];
+        this.reviewIndex = 0;
+        this.reviewGames = [];
 
         // Initialize from DOM data attributes
         const board = document.getElementById('chessboard');
@@ -43,6 +47,9 @@ class ChessGame {
         this.initializeEventListeners();
         this.initializeTimer();
         this.updateStatsDisplay();
+        this.refreshStats();
+        this.refreshLeaderboard();
+        this.refreshHistory();
 
         // Fetch latest game state to ensure sync
         this.syncGameState();
@@ -93,12 +100,14 @@ class ChessGame {
         }
         this.saveStats();
         this.showConfetti();
+        setTimeout(() => this.refreshStats(), 1200);
     }
 
     recordLoss() {
         this.stats.losses++;
         this.stats.streak = Math.min(0, this.stats.streak) - 1;
         this.saveStats();
+        setTimeout(() => this.refreshStats(), 1200);
     }
 
     loadPreferences() {
@@ -174,6 +183,33 @@ class ChessGame {
         }
     }
 
+    async fetchJson(path, options = {}) {
+        const response = await fetch(`${this.baseUrl}${path}`, options);
+        if (response.status === 401) {
+            const nextValue = `${window.location.pathname}${window.location.search || ''}` || '/';
+            const nextPath = encodeURIComponent(nextValue);
+            window.location.href = `${this.baseUrl}/login?next=${nextPath}`;
+            throw new Error('Unauthorized');
+        }
+        return response;
+    }
+
+    async refreshStats() {
+        try {
+            const response = await this.fetchJson('/api/records/stats', { cache: 'no-store' });
+            if (!response.ok) {
+                return;
+            }
+            const data = await response.json();
+            this.stats.wins = data.wins || 0;
+            this.stats.losses = data.losses || 0;
+            this.stats.streak = data.streak || 0;
+            this.saveStats();
+        } catch (error) {
+            // Keep local stats on failure
+        }
+    }
+
     initializeTimer() {
         this.updateTimerDisplay();
     }
@@ -238,16 +274,43 @@ class ChessGame {
         }
     }
 
-    handleTimeout() {
+    async handleTimeout() {
         this.stopTimer();
-        const loser = this.whiteTime === 0 ? 'White' : 'Black';
-        this.showGameOverModal({
-            message: `${loser} ran out of time!`,
-            game_over: true
-        });
-        this.gameOver = true;
+        const loser = this.whiteTime === 0 ? 'white' : 'black';
+        try {
+            const response = await this.fetchJson('/timeout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ color: loser })
+            });
+            const data = await response.json();
+            if (data.success) {
+                this.gameOver = true;
+                if (data.game_state) {
+                    this.updateBoard(data.game_state);
+                }
+                this.updateGameStatus({
+                    message: data.message || 'Time out',
+                    in_check: false
+                });
+                this.showGameOverModal(data);
+            } else {
+                this.showGameOverModal({
+                    message: `${loser.charAt(0).toUpperCase() + loser.slice(1)} ran out of time!`,
+                    game_over: true
+                });
+                this.gameOver = true;
+            }
+        } catch (error) {
+            console.error('Error handling timeout:', error);
+            this.showGameOverModal({
+                message: `${loser.charAt(0).toUpperCase() + loser.slice(1)} ran out of time!`,
+                game_over: true
+            });
+            this.gameOver = true;
+        }
 
-        if (loser === 'Black') {
+        if (loser === 'black') {
             this.recordWin();
         } else {
             this.recordLoss();
@@ -286,7 +349,7 @@ class ChessGame {
         try {
             const version = ++this.stateVersion;
             this.debug('syncGameState:start', { version });
-            const response = await fetch(`${this.baseUrl}/game-state`, { cache: 'no-store' });
+            const response = await this.fetchJson('/game-state', { cache: 'no-store' });
             const gameState = await response.json();
             this.debug('syncGameState:response', {
                 version,
@@ -385,6 +448,168 @@ class ChessGame {
         if (flipBtn) {
             flipBtn.addEventListener('click', () => this.flipBoard());
         }
+
+        const reviewPrevBtn = document.getElementById('review-prev-btn');
+        if (reviewPrevBtn) {
+            reviewPrevBtn.addEventListener('click', () => this.stepReview(-1));
+        }
+
+        const reviewNextBtn = document.getElementById('review-next-btn');
+        if (reviewNextBtn) {
+            reviewNextBtn.addEventListener('click', () => this.stepReview(1));
+        }
+
+        const reviewExitBtn = document.getElementById('review-exit-btn');
+        if (reviewExitBtn) {
+            reviewExitBtn.addEventListener('click', () => this.exitReviewMode());
+        }
+    }
+
+    async refreshLeaderboard() {
+        const list = document.getElementById('leaderboard-list');
+        if (!list) return;
+
+        try {
+            const response = await this.fetchJson('/api/records/leaderboard', { cache: 'no-store' });
+            if (!response.ok) {
+                throw new Error('Failed leaderboard');
+            }
+            const data = await response.json();
+            const leaders = data.leaders || [];
+            if (!leaders.length) {
+                list.innerHTML = '<p class="no-moves">No leaderboard data</p>';
+                return;
+            }
+            list.innerHTML = '';
+            leaders.forEach((entry) => {
+                const row = document.createElement('div');
+                row.className = 'leaderboard-entry';
+                row.innerHTML = `
+                    <div class="leaderboard-rank">${entry.rank}</div>
+                    <div class="leaderboard-name">${entry.player_name || 'Anonymous'}</div>
+                    <div class="leaderboard-points">${entry.points} pts</div>
+                `;
+                list.appendChild(row);
+            });
+        } catch (error) {
+            list.innerHTML = '<p class="no-moves">Leaderboard unavailable</p>';
+        }
+    }
+
+    async refreshHistory() {
+        const list = document.getElementById('review-list');
+        if (!list) return;
+
+        try {
+            const response = await this.fetchJson('/api/records/history', { cache: 'no-store' });
+            if (!response.ok) {
+                throw new Error('Unauthorized');
+            }
+            const data = await response.json();
+            this.reviewGames = data.games || [];
+            if (!this.reviewGames.length) {
+                list.innerHTML = '<p class="no-moves">No finished games</p>';
+                return;
+            }
+            list.innerHTML = '';
+            this.reviewGames.forEach((game) => {
+                const item = document.createElement('div');
+                item.className = 'review-item';
+                item.dataset.gameId = game.game_id;
+                const result = (game.result || 'draw').toUpperCase();
+                const dateLabel = game.finished_at ? new Date(game.finished_at).toLocaleString() : 'Unknown date';
+                item.innerHTML = `
+                    <div class="review-meta">
+                        <div class="review-result">${result}</div>
+                        <div class="review-date">${dateLabel}</div>
+                    </div>
+                    <div>${game.moves_count || 0} moves</div>
+                `;
+                item.addEventListener('click', () => this.loadReviewGame(game.game_id));
+                list.appendChild(item);
+            });
+        } catch (error) {
+            list.innerHTML = '<p class="no-moves">History unavailable</p>';
+        }
+    }
+
+    async loadReviewGame(gameId) {
+        if (!gameId) return;
+        try {
+            const response = await this.fetchJson(`/api/records/history/${gameId}`, { cache: 'no-store' });
+            if (!response.ok) {
+                throw new Error('Review failed');
+            }
+            const data = await response.json();
+            const replay = data.replay || [];
+            if (!replay.length) {
+                this.showNotification('No replay data', 'error');
+                return;
+            }
+            this.reviewStates = replay;
+            this.reviewIndex = 0;
+            this.reviewMode = true;
+            this.stopTimer();
+            this.updateBoard(this.reviewStates[0]);
+            this.updateReviewProgress();
+            this.highlightReviewItem(gameId);
+            const summary = data.game || {};
+            this.updateGameStatus({
+                message: summary.status_message || 'Review mode',
+                in_check: false
+            });
+        } catch (error) {
+            this.showNotification('Failed to load review', 'error');
+        }
+    }
+
+    highlightReviewItem(gameId) {
+        const items = document.querySelectorAll('.review-item');
+        items.forEach((item) => {
+            item.classList.toggle('active', item.dataset.gameId === gameId);
+        });
+    }
+
+    stepReview(direction) {
+        if (!this.reviewMode || !this.reviewStates.length) {
+            return;
+        }
+        const nextIndex = Math.max(0, Math.min(this.reviewStates.length - 1, this.reviewIndex + direction));
+        if (nextIndex === this.reviewIndex) {
+            return;
+        }
+        this.reviewIndex = nextIndex;
+        this.updateBoard(this.reviewStates[this.reviewIndex]);
+        this.updateReviewProgress();
+    }
+
+    updateReviewProgress() {
+        const progress = document.getElementById('review-progress');
+        const prevBtn = document.getElementById('review-prev-btn');
+        const nextBtn = document.getElementById('review-next-btn');
+        if (progress) {
+            if (!this.reviewMode || !this.reviewStates.length) {
+                progress.textContent = 'No game loaded';
+            } else {
+                progress.textContent = `Move ${this.reviewIndex} / ${this.reviewStates.length - 1}`;
+            }
+        }
+        if (prevBtn) {
+            prevBtn.disabled = !this.reviewMode || this.reviewIndex <= 0;
+        }
+        if (nextBtn) {
+            nextBtn.disabled = !this.reviewMode || this.reviewIndex >= this.reviewStates.length - 1;
+        }
+    }
+
+    exitReviewMode() {
+        if (!this.reviewMode) return;
+        this.reviewMode = false;
+        this.reviewStates = [];
+        this.reviewIndex = 0;
+        this.updateReviewProgress();
+        this.syncGameState();
+        this.showNotification('Review mode exited', 'info');
     }
 
     async handleSquareClick(event) {
@@ -392,7 +617,7 @@ class ChessGame {
             this.suppressClick = false;
             return;
         }
-        if (this.gameOver || this.isBusy) {
+        if (this.reviewMode || this.gameOver || this.isBusy) {
             return;
         }
 
@@ -477,11 +702,9 @@ class ChessGame {
     async fetchLegalMoves(row, col, highlight) {
         try {
             this.debug('legalMoves:request', { row, col });
-            const response = await fetch(`${this.baseUrl}/legal-moves`, {
+            const response = await this.fetchJson('/legal-moves', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ position: [row, col] }),
             });
 
@@ -523,11 +746,9 @@ class ChessGame {
         try {
             this.isBusy = true;
             this.debug('move:request', { from: fromPos, to: toPos, promotion: promotionPiece });
-            const response = await fetch(`${this.baseUrl}/move`, {
+            const response = await this.fetchJson('/move', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     from: fromPos,
                     to: toPos,
@@ -608,11 +829,9 @@ class ChessGame {
         this.debug('aiMove:request', {});
 
         try {
-            const response = await fetch(`${this.baseUrl}/ai-move`, {
+            const response = await this.fetchJson('/ai-move', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
             });
             const data = await response.json();
             this.debug('aiMove:response', {
@@ -764,8 +983,28 @@ class ChessGame {
     }
 
     updateCapturedPieces(capturedPieces) {
-        // This is a simplified version - ideally would show actual piece symbols
-        // For now, the server-side rendering handles this better
+        const whiteList = document.querySelector('.captured-white .captured-list');
+        const blackList = document.querySelector('.captured-black .captured-list');
+        if (!whiteList || !blackList) return;
+
+        const renderList = (target, pieces) => {
+            target.innerHTML = '';
+            if (!pieces || !pieces.length) {
+                target.innerHTML = '<span class="none">None</span>';
+                return;
+            }
+            pieces.forEach((pieceData) => {
+                if (!pieceData || !pieceData.type || !pieceData.color) return;
+                const piece = document.createElement('div');
+                piece.className = `captured-piece piece ${pieceData.color} ${pieceData.type}`;
+                piece.dataset.pieceType = pieceData.type;
+                piece.dataset.pieceColor = pieceData.color;
+                target.appendChild(piece);
+            });
+        };
+
+        renderList(whiteList, capturedPieces?.white || []);
+        renderList(blackList, capturedPieces?.black || []);
     }
 
     showPromotionModal(fromPos, toPos) {
@@ -813,14 +1052,15 @@ class ChessGame {
 
     async startNewGame() {
         try {
+            if (this.reviewMode) {
+                this.exitReviewMode();
+            }
             this.stateVersion += 1;
             this.gameId = null;
             this.debug('newGame:request', {});
-            const response = await fetch(`${this.baseUrl}/new-game`, {
+            const response = await this.fetchJson('/new-game', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
             });
 
             const data = await response.json();
@@ -860,11 +1100,9 @@ class ChessGame {
         }
 
         try {
-            const response = await fetch(`${this.baseUrl}/resign`, {
+            const response = await this.fetchJson('/resign', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     color: this.currentTurn,
                 }),
@@ -938,7 +1176,7 @@ class ChessGame {
             return;
         }
 
-        if (this.gameOver || this.isBusy) {
+        if (this.reviewMode || this.gameOver || this.isBusy) {
             return;
         }
 
@@ -1200,7 +1438,7 @@ class ChessGame {
 
     async saveGame() {
         try {
-            const response = await fetch(`${this.baseUrl}/game-state`, { cache: 'no-store' });
+            const response = await this.fetchJson('/game-state', { cache: 'no-store' });
             const gameState = await response.json();
 
             const saveData = {
@@ -1248,7 +1486,7 @@ class ChessGame {
                 throw new Error('Invalid save file format');
             }
 
-            const response = await fetch(`${this.baseUrl}/load-game`, {
+            const response = await this.fetchJson('/load-game', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ game_state: saveData.gameState })
@@ -1303,7 +1541,7 @@ class ChessGame {
         if (this.gameOver || this.isBusy) return;
 
         try {
-            const response = await fetch(`${this.baseUrl}/undo`, {
+            const response = await this.fetchJson('/undo', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });

@@ -4,6 +4,7 @@ from flask import session, request, current_app
 from flask_restx import Namespace, Resource, fields
 
 from ..models import Game
+from ..auth import get_current_user
 
 ns = Namespace('persistence', description='Save and load game operations')
 
@@ -34,6 +35,10 @@ class LoadGame(Resource):
     @ns.response(400, 'Invalid game state')
     def post(self):
         """Load a previously saved game state."""
+        user, error = get_current_user(request)
+        if not user:
+            ns.abort(401, error or 'Unauthorized')
+
         data = request.get_json(silent=True)
         if not data or 'game_state' not in data:
             ns.abort(400, 'Invalid load game payload')
@@ -61,6 +66,10 @@ class ExportGame(Resource):
     @ns.response(400, 'No active game')
     def get(self):
         """Export the current game in PGN and FEN formats."""
+        user, error = get_current_user(request)
+        if not user:
+            ns.abort(401, error or 'Unauthorized')
+
         if 'game' not in session:
             ns.abort(400, 'No active game')
 

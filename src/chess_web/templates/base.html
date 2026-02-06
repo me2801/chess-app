@@ -12,6 +12,9 @@
     <header>
         <h1>♔ Chess Game ♚</h1>
         <nav>
+            <a class="btn btn-secondary nav-link {{ 'active' if active_nav == 'game' else '' }}" href="{{ url_for('index') }}">Game</a>
+            <a class="btn btn-secondary nav-link {{ 'active' if active_nav == 'review' else '' }}" href="{{ url_for('review') }}">Review</a>
+            <a class="btn btn-secondary nav-link {{ 'active' if active_nav == 'leaderboard' else '' }}" href="{{ url_for('leaderboard') }}">Leaderboard</a>
             <button id="theme-toggle" class="btn btn-icon" title="Toggle Theme">
                 <svg class="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="5"/>
@@ -21,18 +24,21 @@
                     <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
                 </svg>
             </button>
-            <button id="sound-toggle" class="btn btn-icon" title="Toggle Sound">
-                <svg class="icon-sound-on" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-                </svg>
-                <svg class="icon-sound-off" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                    <line x1="23" y1="9" x2="17" y2="15"/>
-                    <line x1="17" y1="9" x2="23" y2="15"/>
-                </svg>
-            </button>
-            <button id="new-game-btn" class="btn">New Game</button>
+            {% if show_game_controls %}
+                <button id="sound-toggle" class="btn btn-icon" title="Toggle Sound">
+                    <svg class="icon-sound-on" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    </svg>
+                    <svg class="icon-sound-off" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <line x1="23" y1="9" x2="17" y2="15"/>
+                        <line x1="17" y1="9" x2="23" y2="15"/>
+                    </svg>
+                </button>
+                <button id="new-game-btn" class="btn">New Game</button>
+            {% endif %}
+            <a class="btn btn-secondary" href="{{ url_for('logout') }}">Logout</a>
         </nav>
     </header>
 
@@ -44,7 +50,6 @@
         <p>Built with Flask & Jinja</p>
     </footer>
 
-    <script src="{{ url_for('static', filename='js/chess.js', v=config['ASSET_VERSION']) }}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

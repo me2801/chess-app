@@ -83,25 +83,6 @@
 
         <div class="game-controls">
             <div class="control-row">
-                <button id="save-game-btn" class="btn btn-secondary" title="Save Game">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                        <polyline points="17 21 17 13 7 13 7 21"/>
-                        <polyline points="7 3 7 8 15 8"/>
-                    </svg>
-                    Save
-                </button>
-                <button id="load-game-btn" class="btn btn-secondary" title="Load Game">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="17 8 12 3 7 8"/>
-                        <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                    Load
-                </button>
-                <input type="file" id="load-game-input" accept=".json" style="display: none;">
-            </div>
-            <div class="control-row">
                 <button id="undo-btn" class="btn btn-secondary" title="Undo Last Move">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="1 4 1 10 7 10"/>
@@ -185,4 +166,8 @@
         <button id="new-game-modal-btn" class="btn">Start New Game</button>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/chess.js', v=config['ASSET_VERSION']) }}"></script>
 {% endblock %}

@@ -11,6 +11,8 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "asgiref>=3.7.0",
     "uvicorn[standard]>=0.27",
+    "psycopg[binary]>=3.1.18",
+    "supabase-auth @ git+https://github.com/me2801/supabase_auth.git",
 ]
 
 [project.optional-dependencies]
@@ -26,3 +28,6 @@ chess-web-asgi = "chess_web.asgi:app"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true

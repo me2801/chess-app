@@ -1,9 +1,14 @@
 """Move-related API endpoints."""
 
+import logging
+import threading
+
 from flask import session, request, current_app
 from flask_restx import Namespace, Resource, fields
 
 from ..models import Game
+from ..auth import get_current_user
+from ..storage import StorageError, save_game_state
 
 ns = Namespace('moves', description='Move operations')
 
@@ -43,6 +48,10 @@ ai_move_response = ns.model('AIMoveResponse', {
     'game_state': fields.Raw(description='Updated game state')
 })
 
+timeout_request = ns.model('TimeoutRequest', {
+    'color': fields.String(required=True, description='Color that ran out of time (white/black)')
+})
+
 
 def _parse_position(value):
     """Parse a position value into a (row, col) tuple."""
@@ -65,11 +74,36 @@ def _parse_position(value):
 
 def _validate_session():
     """Validate the session is active."""
+    user, error = get_current_user(request)
+    if not user:
+        return False, error or 'Unauthorized'
     if 'game' not in session:
         return False, 'No active game'
     if session.get('server_start_id') != current_app.config['SERVER_START_ID']:
         return False, 'Session expired'
     return True, None
+
+
+def _store_game_state(game: Game) -> None:
+    user, _error = get_current_user(request)
+    if not user:
+        return
+    game_state = game.to_dict()
+    logger = logging.getLogger(__name__)
+
+    def _persist(user_snapshot, state_snapshot):
+        try:
+            save_game_state(user_snapshot, state_snapshot)
+        except StorageError:
+            return
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("Unexpected save error: %s", exc)
+
+    threading.Thread(
+        target=_persist,
+        args=(user, game_state),
+        daemon=True
+    ).start()
 
 
 @ns.route('/')
@@ -103,6 +137,7 @@ class MakeMove(Resource):
         session.modified = True
 
         result['game_state'] = game.to_dict()
+        _store_game_state(game)
         return result
 
 
@@ -126,6 +161,8 @@ class UndoMove(Resource):
 
         if result['success']:
             result['game_state'] = game.to_dict()
+
+        _store_game_state(game)
 
         return result
 
@@ -151,5 +188,35 @@ class AIMove(Resource):
         session['game'] = game.to_dict()
         session.modified = True
         result['game_state'] = game.to_dict()
+        _store_game_state(game)
+
+        return result
+
+
+@ns.route('/timeout')
+class Timeout(Resource):
+    @ns.doc('timeout_game')
+    @ns.expect(timeout_request)
+    @ns.marshal_with(ai_move_response)
+    @ns.response(200, 'Timeout processed')
+    @ns.response(400, 'Invalid request')
+    def post(self):
+        """End the game due to a timeout."""
+        data = request.get_json(silent=True) or {}
+        color = data.get('color')
+        if color not in {'white', 'black'}:
+            ns.abort(400, 'Invalid timeout color')
+
+        valid, error = _validate_session()
+        if not valid:
+            ns.abort(400, error)
+
+        game = Game.from_dict(session['game'])
+        result = game.timeout(color)
+
+        session['game'] = game.to_dict()
+        session.modified = True
+        result['game_state'] = game.to_dict()
+        _store_game_state(game)
 
         return result
